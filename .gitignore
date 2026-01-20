@@ -1,0 +1,41 @@
+# Service files & IDE
+.vs/
+.idea/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.patch
+*.diff
+
+# Build artifacts & Temporary files
+[Oo]bj/
+[Bb]in/
+[Ll]og/
+publish/
+installer_output/
+TestResults/
+*.tmp
+
+# Visual Studio 2017+ cache
+.vs/
+
+# --- TOOLS EXCEPTIONS ---
+# We keep specific essential tools in the bin folder
+!bin/WinDivert.dll
+!bin/WinDivert64.sys
+!bin/cygwin1.dll
+!bin/winws.exe
+
+# Ignore all other binaries globally
+*.dll
+*.pdb
+*.sys
+*.exe
+*.msi
+*.msix
+*.zip
+*.7z
+
+# --- PROJECT-SPECIFIC EXCEPTIONS ---
+# Allow the main source code binaries if specifically needed

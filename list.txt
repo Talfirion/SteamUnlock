@@ -1,0 +1,21 @@
+# Steam
+steampowered.com
+steamcommunity.com
+steamstatic.com
+steamusercontent.com
+steam-chat.com
+# Discord
+discord.com
+discordapp.com
+discord.gg
+discord.media
+discordapp.net
+discord.gift
+# YouTube
+youtube.com
+youtu.be
+googlevideo.com
+ytimg.com
+ggpht.com
+youtubei.googleapis.com
+nhacmp3.googlevideo.com
