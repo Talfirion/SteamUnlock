@@ -4,18 +4,42 @@ steamcommunity.com
 steamstatic.com
 steamusercontent.com
 steam-chat.com
-# Discord
-discord.com
-discordapp.com
-discord.gg
-discord.media
-discordapp.net
-discord.gift
-# YouTube
-youtube.com
-youtu.be
-googlevideo.com
-ytimg.com
-ggpht.com
-youtubei.googleapis.com
-nhacmp3.googlevideo.com
+# CurseForge & Overwolf
+curseforge.com
+forgecdn.net
+overwolf.com
+overwolf.akamaized.net
+edge.forgecdn.net
+cdn.overwolf.com
+# Gaming Platforms & Servers
+epicgames.com
+fortnite.com
+epicgames.net
+unrealengine.com
+riotgames.com
+leagueoflegends.com
+valorant.com
+anticheat.riotgames.com
+battle.net
+blizzard.com
+blz-contentstack.com
+ea.com
+origin.com
+bioware.com
+ubisoft.com
+uplay.com
+ubi.com
+rockstargames.com
+rsg.sc
+modrinth.com
+modrinth.net
+twitch.tv
+ttvnw.net
+jtvnw.net
+# Minecraft & Launchers
+minecraft.net
+mojang.com
+minecraftservices.com
+tlauncher.org
+klauncher.ru
+legacy.curseforge.com
