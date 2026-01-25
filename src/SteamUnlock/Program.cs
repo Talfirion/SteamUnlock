@@ -7,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using System.Drawing;
+using Microsoft.Win32;
 
 namespace SteamUnlock;
 
@@ -16,6 +17,10 @@ static class Program
     static void Main()
     {
         ApplicationConfiguration.Initialize();
+
+        // Clean up legacy autostart from Registry FIRST
+        // This runs even if we are not admin and about to exit
+        AutostartManager.CleanupLegacy();
 
         if (!IsAdministrator())
         {
@@ -41,6 +46,7 @@ static class Program
 public class TrayApplicationContext : ApplicationContext
 {
     private readonly NotifyIcon _trayIcon;
+    private readonly ToolStripMenuItem _autostartMenuItem;
     private Process? _engineProcess;
     private readonly string _rootDir;
     private readonly string _binDir;
@@ -54,6 +60,10 @@ public class TrayApplicationContext : ApplicationContext
         _binDir = Path.Combine(_rootDir, "bin");
         _listFile = Path.Combine(_rootDir, "list.txt");
         _exeFile = Path.Combine(_binDir, "winws.exe");
+
+        // Initialize Autostart Menu Item early to use in CreateContextMenu
+        _autostartMenuItem = new ToolStripMenuItem("Run at Windows Startup", null, (s, e) => ToggleAutostart());
+        _autostartMenuItem.Checked = AutostartManager.IsEnabled();
 
         // Initialize Tray Icon
         _trayIcon = new NotifyIcon()
@@ -82,6 +92,7 @@ public class TrayApplicationContext : ApplicationContext
         menu.Items.Add(startItem);
         menu.Items.Add(stopItem);
         menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add(_autostartMenuItem);
         menu.Items.Add(settingsItem);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(exitItem);
@@ -153,6 +164,17 @@ public class TrayApplicationContext : ApplicationContext
         }
     }
 
+    private void ToggleAutostart()
+    {
+        bool newState = !_autostartMenuItem.Checked;
+        if (AutostartManager.SetEnabled(newState))
+        {
+            _autostartMenuItem.Checked = newState;
+            string status = newState ? "enabled" : "disabled";
+            _trayIcon.ShowBalloonTip(2000, "Steam Unlock", $"Autostart {status}.", ToolTipIcon.Info);
+        }
+    }
+
     private bool VerifyFiles()
     {
         string[] requiredFiles = { _exeFile, Path.Combine(_binDir, "WinDivert.dll"), Path.Combine(_binDir, "WinDivert64.sys"), _listFile };
@@ -186,6 +208,7 @@ public class TrayApplicationContext : ApplicationContext
         StopEngine();
         _trayIcon.Visible = false;
         Application.Exit();
+        Environment.Exit(0); // Ensure process dies completely for Task Scheduler
     }
 
     protected override void Dispose(bool disposing)
@@ -195,5 +218,118 @@ public class TrayApplicationContext : ApplicationContext
             _trayIcon?.Dispose();
         }
         base.Dispose(disposing);
+    }
+}
+
+public static class AutostartManager
+{
+    private const string TaskName = "SteamUnlockAutostart";
+    private static readonly string ExePath = Process.GetCurrentProcess().MainModule?.FileName ?? "";
+
+    public static bool IsEnabled()
+    {
+        try
+        {
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = "schtasks",
+                Arguments = $"/Query /TN \"{TaskName}\" /NH",
+                CreateNoWindow = true,
+                UseShellExecute = false,
+                RedirectStandardOutput = true
+            };
+            using var process = Process.Start(startInfo);
+            process?.WaitForExit();
+            return process?.ExitCode == 0;
+        }
+        catch { return false; }
+    }
+
+    public static bool SetEnabled(bool enable)
+    {
+        try
+        {
+            if (enable)
+            {
+                // Create task: /RL HIGHEST for admin rights, /SC ONLOGON for startup, /IT for interactive
+                // We use XML-less creation for simplicity via CLI
+                string args = $"/Create /TN \"{TaskName}\" /TR \"\\\"{ExePath}\\\"\" /SC ONLOGON /RL HIGHEST /F";
+                var startInfo = new ProcessStartInfo
+                {
+                    FileName = "schtasks",
+                    Arguments = args,
+                    CreateNoWindow = true,
+                    UseShellExecute = false
+                };
+                using var process = Process.Start(startInfo);
+                process?.WaitForExit();
+                return process?.ExitCode == 0;
+            }
+            else
+            {
+                var startInfo = new ProcessStartInfo
+                {
+                    FileName = "schtasks",
+                    Arguments = $"/Delete /TN \"{TaskName}\" /F",
+                    CreateNoWindow = true,
+                    UseShellExecute = false
+                };
+                using var process = Process.Start(startInfo);
+                process?.WaitForExit();
+                return process?.ExitCode == 0;
+            }
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Failed to modify autostart: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            return false;
+        }
+    }
+
+    public static void CleanupLegacy()
+    {
+        string[] keys = {
+            @"Software\Microsoft\Windows\CurrentVersion\Run",
+            @"Software\Microsoft\Windows\CurrentVersion\RunOnce"
+        };
+
+        string[] possibleNames = { "SteamUnlock", "Steam Unlock" };
+
+        foreach (var subKeyPath in keys)
+        {
+            // Try HKCU
+            CleanupKey(Registry.CurrentUser, subKeyPath, possibleNames);
+            // Try HKLM (only works if running as admin, but we try anyway)
+            CleanupKey(Registry.LocalMachine, subKeyPath, possibleNames);
+        }
+    }
+
+    private static void CleanupKey(RegistryKey root, string path, string[] names)
+    {
+        try
+        {
+            using var key = root.OpenSubKey(path, true);
+            if (key == null) return;
+
+            // Delete by name
+            foreach (var name in names)
+            {
+                if (key.GetValue(name) != null)
+                {
+                    key.DeleteValue(name, false);
+                }
+            }
+
+            // Also scan for any value that contains our exe name as a fallback
+            foreach (var valueName in key.GetValueNames())
+            {
+                var val = key.GetValue(valueName)?.ToString() ?? "";
+                if (val.Contains("SteamUnlock.exe", StringComparison.OrdinalIgnoreCase))
+                {
+                    key.DeleteValue(valueName, false);
+                }
+            }
+        }
+        catch { /* Squelch errors for non-admin or missing keys */ }
     }
 }
