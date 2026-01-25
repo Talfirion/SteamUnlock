@@ -87,6 +87,7 @@ public class TrayApplicationContext : ApplicationContext
         var startItem = new ToolStripMenuItem("Start Service", null, (s, e) => StartEngine());
         var stopItem = new ToolStripMenuItem("Stop Service", null, (s, e) => StopEngine());
         var settingsItem = new ToolStripMenuItem("Edit list.txt", null, (s, e) => OpenSettings());
+        var updateItem = new ToolStripMenuItem("Check for Updates", null, async (s, e) => await CheckForUpdates());
         var exitItem = new ToolStripMenuItem("Exit", null, (s, e) => Exit());
 
         menu.Items.Add(startItem);
@@ -95,6 +96,7 @@ public class TrayApplicationContext : ApplicationContext
         menu.Items.Add(_autostartMenuItem);
         menu.Items.Add(settingsItem);
         menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add(updateItem);
         menu.Items.Add(exitItem);
 
         return menu;
@@ -173,6 +175,11 @@ public class TrayApplicationContext : ApplicationContext
             string status = newState ? "enabled" : "disabled";
             _trayIcon.ShowBalloonTip(2000, "Steam Unlock", $"Autostart {status}.", ToolTipIcon.Info);
         }
+    }
+
+    private async Task CheckForUpdates()
+    {
+        await UpdateChecker.CheckForUpdatesAsync();
     }
 
     private bool VerifyFiles()
