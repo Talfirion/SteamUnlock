@@ -28,6 +28,9 @@ static class Program
             return;
         }
 
+        // Perform one-time migration from old versions
+        MigrationManager.CheckAndMigrate();
+
         Application.Run(new TrayApplicationContext());
     }
 

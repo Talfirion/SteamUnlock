@@ -72,6 +72,15 @@ function InitializeSetup(): Boolean;
 var
   ResultCode: Integer;
 begin
+  // Kill any running processes FIRST
+  Exec('taskkill', '/F /IM SteamUnlock.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Exec('taskkill', '/F /IM winws.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  
+  // Stop and remove WinDivert service if it exists
+  Exec('sc', 'stop WinDivert', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Sleep(1000); // Wait 1 second for service to stop
+  Exec('sc', 'delete WinDivert', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  
   // Clean up legacy Registry entries from old versions
   Exec('reg', 'delete "HKCU\Software\Microsoft\Windows\CurrentVersion\Run" /v "SteamUnlock" /f', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   Exec('reg', 'delete "HKCU\Software\Microsoft\Windows\CurrentVersion\Run" /v "Steam Unlock" /f', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
