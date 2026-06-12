@@ -23,8 +23,24 @@ anticheat.riotgames.com
 battle.net
 blizzard.com
 blz-contentstack.com
+# EA / Respawn / Titanfall 2
 ea.com
 origin.com
+respawn.com
+titanfall.com
+tnt-ea.com
+juno.ea.com
+gateway.ea.com
+checkout.ea.com
+proxy.novafusion.ea.com
+r2-pc.s3.amazonaws.com
+r2-pc.stryder.respawn.com
+r2-pc-stats.stryder.respawn.com
+cloudsync-prod.s3.us-east-1.amazonaws.com
+s3-r-w.us-east-1.amazonaws.com
+eaassets-a.akamaihd.net
+eadp-a.akamaihd.net
+akamaihd.net
 bioware.com
 ubisoft.com
 uplay.com
@@ -43,3 +59,12 @@ minecraftservices.com
 tlauncher.org
 klauncher.ru
 legacy.curseforge.com
+files.minecraftforge.net
+maven.minecraftforge.net
+libraries.minecraft.net
+launcher.mojang.com
+launchermeta.mojang.com
+piston-meta.mojang.com
+piston-data.mojang.com
+resources.download.minecraft.net
+api.curseforge.com

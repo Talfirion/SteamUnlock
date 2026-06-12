@@ -12,6 +12,7 @@
 [Oo]bj/
 [Bb]in/
 [Ll]og/
+logs/
 publish/
 installer_output/
 TestResults/
@@ -39,3 +40,8 @@ TestResults/
 
 # --- PROJECT-SPECIFIC EXCEPTIONS ---
 # Allow the main source code binaries if specifically needed
+!/bin/
+!bin/WinDivert.dll
+!bin/WinDivert64.sys
+!bin/cygwin1.dll
+!bin/winws.exe

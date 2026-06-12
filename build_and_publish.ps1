@@ -22,12 +22,15 @@ if ($LASTEXITCODE -eq 0) {
     Write-Host "[+] Publish successful! Output folder: $publishDir" -ForegroundColor Green
     Write-Host "[*] Copying engine files..." -ForegroundColor Cyan
     
-    # Copy bin and list.txt to publish folder for testing
+    # Copy engine files and runtime config to publish folder for testing
     if (Test-Path "./bin") {
         Copy-Item -Path "./bin" -Destination "$publishDir/bin" -Recurse -Force
     }
     if (Test-Path "./list.txt") {
         Copy-Item -Path "./list.txt" -Destination "$publishDir/list.txt" -Force
+    }
+    if (Test-Path "./engine_args.txt") {
+        Copy-Item -Path "./engine_args.txt" -Destination "$publishDir/engine_args.txt" -Force
     }
     
     Write-Host "[+] Ready to create installer using installer.iss" -ForegroundColor Green

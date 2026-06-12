@@ -3,7 +3,7 @@
 
 [Setup]
 AppName=Steam Unlock
-AppVersion=1.0
+AppVersion=1.2
 DefaultDirName={autopf}\SteamUnlock
 DefaultGroupName=Steam Unlock
 UninstallDisplayIcon={app}\SteamUnlock.exe
@@ -20,6 +20,7 @@ Source: ".\publish\bin\WinDivert.dll"; DestDir: "{app}\bin"; Flags: ignoreversio
 Source: ".\publish\bin\WinDivert64.sys"; DestDir: "{app}\bin"; Flags: ignoreversion uninsrestartdelete
 Source: ".\publish\bin\cygwin1.dll"; DestDir: "{app}\bin"; Flags: ignoreversion
 Source: ".\publish\list.txt"; DestDir: "{app}"; Flags: ignoreversion
+Source: ".\publish\engine_args.txt"; DestDir: "{app}"; Flags: ignoreversion
 
 [Tasks]
 Name: "startwithwindows"; Description: "Run Steam Unlock at Windows startup"; GroupDescription: "Startup options:"; Flags: checkedonce
@@ -61,7 +62,9 @@ Type: files; Name: "{app}\bin\WinDivert.dll"
 Type: files; Name: "{app}\bin\winws.exe"
 Type: files; Name: "{app}\bin\cygwin1.dll"
 Type: files; Name: "{app}\list.txt"
+Type: files; Name: "{app}\engine_args.txt"
 Type: files; Name: "{app}\SteamUnlock.exe"
+Type: filesandordirs; Name: "{app}\logs"
 ; Remove empty directories
 Type: dirifempty; Name: "{app}\bin"
 Type: dirifempty; Name: "{app}"

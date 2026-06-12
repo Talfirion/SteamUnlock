@@ -23,10 +23,13 @@ public static class UpdateChecker
     {
         try
         {
+            Logger.Info("Checking for updates.");
+
             // Get current version
             var currentVersion = Assembly.GetExecutingAssembly().GetName().Version;
             if (currentVersion == null)
             {
+                Logger.Warn("Unable to determine current version.");
                 MessageBox.Show("Unable to determine current version.", "Update Check", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
@@ -37,14 +40,18 @@ public static class UpdateChecker
 
             if (release == null || string.IsNullOrEmpty(release.TagName))
             {
+                Logger.Warn("GitHub release response did not contain a tag.");
                 MessageBox.Show("Unable to fetch update information.", "Update Check", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
+
+            Logger.Info($"Latest GitHub release tag: {release.TagName}.");
 
             // Parse version from tag (e.g., "v1.0.0" -> "1.0.0")
             string versionString = release.TagName.TrimStart('v');
             if (!Version.TryParse(versionString, out var latestVersion))
             {
+                Logger.Warn($"Unable to parse release tag: {release.TagName}.");
                 MessageBox.Show($"Unable to parse version from tag: {release.TagName}", "Update Check", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
@@ -52,9 +59,12 @@ public static class UpdateChecker
             // Compare versions
             if (latestVersion <= currentVersion)
             {
+                Logger.Info($"No update available. Current: {currentVersion}, latest: {latestVersion}.");
                 MessageBox.Show($"You are already using the latest version ({currentVersion}).", "Update Check", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
+
+            Logger.Info($"Update available. Current: {currentVersion}, latest: {latestVersion}.");
 
             // New version available
             var result = MessageBox.Show(
@@ -68,13 +78,19 @@ public static class UpdateChecker
             {
                 await DownloadAndInstallUpdateAsync(release);
             }
+            else
+            {
+                Logger.Info("User declined update installation.");
+            }
         }
         catch (HttpRequestException ex)
         {
+            Logger.Error($"Failed to check for updates: {ex}");
             MessageBox.Show($"Failed to check for updates:\n{ex.Message}\n\nPlease check your internet connection.", "Update Check Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
         catch (Exception ex)
         {
+            Logger.Error($"Unexpected update check error: {ex}");
             MessageBox.Show($"Unexpected error during update check:\n{ex.Message}", "Update Check Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
@@ -87,9 +103,12 @@ public static class UpdateChecker
             var installerAsset = release.Assets?.FirstOrDefault(a => a.Name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase));
             if (installerAsset == null || string.IsNullOrEmpty(installerAsset.BrowserDownloadUrl))
             {
+                Logger.Warn("No installer asset was found in the latest release.");
                 MessageBox.Show("No installer found in the latest release.", "Update Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return;
             }
+
+            Logger.Info($"Downloading update asset: {installerAsset.Name}.");
 
             // Download installer to temp folder
             string tempPath = Path.Combine(Path.GetTempPath(), installerAsset.Name);
@@ -98,6 +117,7 @@ public static class UpdateChecker
 
             var fileBytes = await _httpClient.GetByteArrayAsync(installerAsset.BrowserDownloadUrl);
             await File.WriteAllBytesAsync(tempPath, fileBytes);
+            Logger.Info($"Downloaded update to {tempPath}. Size: {fileBytes.Length} bytes.");
 
             // Launch installer with silent flags
             var startInfo = new ProcessStartInfo
@@ -108,6 +128,7 @@ public static class UpdateChecker
             };
 
             Process.Start(startInfo);
+            Logger.Info("Update installer launched. Exiting application.");
 
             // Exit the application to allow installer to update files
             Application.Exit();
@@ -115,6 +136,7 @@ public static class UpdateChecker
         }
         catch (Exception ex)
         {
+            Logger.Error($"Failed to download or install update: {ex}");
             MessageBox.Show($"Failed to download or install update:\n{ex.Message}", "Update Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
