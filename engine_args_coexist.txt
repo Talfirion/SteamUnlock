@@ -1,0 +1,7 @@
+# Used automatically when another zapret/winws instance is already running.
+# Keep this profile away from HTTP/TLS/QUIC 80/443 so it can coexist with upstream zapret presets.
+# Lines starting with # are ignored. {LIST} and {BIN} are replaced at runtime.
+--wf-tcp=1024-1124,9960-9969,18000,18060,18120,27900,28910,29900
+--wf-udp=3478-3480,3659,1024-1124,18000,29900,50000-65535
+--filter-tcp=1024-1124,9960-9969,18000,18060,18120,27900,28910,29900 --hostlist="{LIST}" --dpi-desync=split2 --dpi-desync-split-pos=2 --dpi-desync-repeats=6 --new
+--filter-udp=3478-3480,3659,1024-1124,18000,29900,50000-65535 --hostlist="{LIST}" --dpi-desync=split2 --dpi-desync-split-pos=2 --dpi-desync-repeats=6

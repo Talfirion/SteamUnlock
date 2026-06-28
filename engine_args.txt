@@ -1,7 +1,8 @@
 # Lines starting with # are ignored. {LIST} and {BIN} are replaced at runtime.
 --wf-tcp=80,443,1024-1124,9960-9969,18000,18060,18120,27900,28910,29900
 --wf-udp=443,3478-3480,3659,1024-1124,18000,29900,50000-65535
---hostlist="{LIST}"
---dpi-desync=split2
---dpi-desync-split-pos=2
---dpi-desync-repeats=6
+--filter-tcp=80 --hostlist="{LIST}" --dpi-desync=fake,fakedsplit --dpi-desync-autottl=2 --dpi-desync-fooling=md5sig --new
+--filter-tcp=443 --hostlist="{LIST}" --dpi-desync=fake,multidisorder --dpi-desync-split-pos=midsld --dpi-desync-repeats=6 --dpi-desync-fooling=badseq,md5sig --new
+--filter-udp=443 --hostlist="{LIST}" --dpi-desync=fake --dpi-desync-repeats=11 --new
+--filter-tcp=1024-1124,9960-9969,18000,18060,18120,27900,28910,29900 --hostlist="{LIST}" --dpi-desync=split2 --dpi-desync-split-pos=2 --dpi-desync-repeats=6 --new
+--filter-udp=3478-3480,3659,1024-1124,18000,29900,50000-65535 --hostlist="{LIST}" --dpi-desync=split2 --dpi-desync-split-pos=2 --dpi-desync-repeats=6

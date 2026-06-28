@@ -68,3 +68,10 @@ piston-meta.mojang.com
 piston-data.mojang.com
 resources.download.minecraft.net
 api.curseforge.com
+
+# File Sharing / Transfer
+wormhole.app
+www.wormhole.app
+wormhole.app.link
+cloudflare.com
+cloudflare-dns.com

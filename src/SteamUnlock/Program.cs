@@ -17,10 +17,18 @@ namespace SteamUnlock;
 
 static class Program
 {
+    private static Mutex? _singleInstanceMutex;
+
     [STAThread]
     static void Main()
     {
         ApplicationConfiguration.Initialize();
+        _singleInstanceMutex = CreateSingleInstanceMutex(out var isFirstInstance);
+        if (!isFirstInstance)
+        {
+            MessageBox.Show("Steam Unlock is already running.", "Steam Unlock", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
 
         // Clean up legacy autostart from Registry FIRST
         // This runs even if we are not admin and about to exit
@@ -35,7 +43,27 @@ static class Program
         // Perform one-time migration from old versions
         MigrationManager.CheckAndMigrate();
 
-        Application.Run(new TrayApplicationContext());
+        try
+        {
+            Application.Run(new TrayApplicationContext());
+        }
+        finally
+        {
+            _singleInstanceMutex?.ReleaseMutex();
+            _singleInstanceMutex?.Dispose();
+        }
+    }
+
+    private static Mutex CreateSingleInstanceMutex(out bool isFirstInstance)
+    {
+        try
+        {
+            return new Mutex(true, @"Global\SteamUnlock.SingleInstance", out isFirstInstance);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return new Mutex(true, @"Local\SteamUnlock.SingleInstance", out isFirstInstance);
+        }
     }
 
     static bool IsAdministrator()
@@ -59,6 +87,7 @@ public class TrayApplicationContext : ApplicationContext
     private readonly string _binDir;
     private readonly string _listFile;
     private readonly string _engineArgsFile;
+    private readonly string _coexistEngineArgsFile;
     private readonly string _exeFile;
     private bool _diagnosticsRunning;
 
@@ -69,10 +98,11 @@ public class TrayApplicationContext : ApplicationContext
         _binDir = Path.Combine(_rootDir, "bin");
         _listFile = Path.Combine(_rootDir, "list.txt");
         _engineArgsFile = Path.Combine(_rootDir, "engine_args.txt");
+        _coexistEngineArgsFile = Path.Combine(_rootDir, "engine_args_coexist.txt");
         _exeFile = Path.Combine(_binDir, "winws.exe");
         Logger.Initialize(_rootDir);
         Logger.Info("Application starting.");
-        EnsureDefaultEngineArgsFile();
+        EnsureDefaultEngineArgsFiles();
 
         // Initialize Autostart Menu Item early to use in CreateContextMenu
         _autostartMenuItem = new ToolStripMenuItem("Run at Windows Startup", null, (s, e) => ToggleAutostart());
@@ -101,6 +131,7 @@ public class TrayApplicationContext : ApplicationContext
         var stopItem = new ToolStripMenuItem("Stop Service", null, (s, e) => StopEngine());
         var settingsItem = new ToolStripMenuItem("Edit list.txt", null, (s, e) => OpenSettings());
         var engineArgsItem = new ToolStripMenuItem("Edit engine_args.txt", null, (s, e) => OpenEngineArgs());
+        var coexistEngineArgsItem = new ToolStripMenuItem("Edit engine_args_coexist.txt", null, (s, e) => OpenCoexistEngineArgs());
         var diagnosticsItem = new ToolStripMenuItem("Run Diagnostics", null, async (s, e) => await RunDiagnosticsAsync());
         var logsItem = new ToolStripMenuItem("Open Logs Folder", null, (s, e) => OpenLogsFolder());
         var updateItem = new ToolStripMenuItem("Check for Updates", null, async (s, e) => await CheckForUpdates());
@@ -112,6 +143,7 @@ public class TrayApplicationContext : ApplicationContext
         menu.Items.Add(_autostartMenuItem);
         menu.Items.Add(settingsItem);
         menu.Items.Add(engineArgsItem);
+        menu.Items.Add(coexistEngineArgsItem);
         menu.Items.Add(diagnosticsItem);
         menu.Items.Add(logsItem);
         menu.Items.Add(new ToolStripSeparator());
@@ -132,6 +164,25 @@ public class TrayApplicationContext : ApplicationContext
 
         if (!VerifyFiles()) return;
 
+        if (TryFindRunningOwnEngine(out var runningEnginePid))
+        {
+            Logger.Warn($"Start requested, but Steam Unlock engine is already running as PID {runningEnginePid}.");
+            _trayIcon.Text = "Steam Unlock - Running";
+            _trayIcon.ShowBalloonTip(3000, "Steam Unlock", "Steam Unlock engine is already running.", ToolTipIcon.Info);
+            return;
+        }
+
+        var useCoexistenceProfile = HasExternalZapretEngine(out var externalEngineSummary);
+        if (useCoexistenceProfile)
+        {
+            Logger.Warn($"External zapret/winws process detected ({externalEngineSummary}). Using coexistence profile.");
+            _trayIcon.ShowBalloonTip(
+                4000,
+                "Steam Unlock",
+                "External zapret/winws detected. Starting with coexistence profile.",
+                ToolTipIcon.Info);
+        }
+
         // Flush DNS
         Logger.Info("Flushing DNS cache.");
         using (var flushProcess = Process.Start(new ProcessStartInfo { FileName = "ipconfig", Arguments = "/flushdns", CreateNoWindow = true, UseShellExecute = false }))
@@ -140,8 +191,9 @@ public class TrayApplicationContext : ApplicationContext
             Logger.Info($"DNS flush exit code: {flushProcess?.ExitCode.ToString() ?? "unknown"}.");
         }
 
-        string arguments = LoadEngineArguments();
-        Logger.Info($"Starting engine: \"{_exeFile}\" {arguments}");
+        string arguments = LoadEngineArguments(useCoexistenceProfile);
+        var profileName = useCoexistenceProfile ? Path.GetFileName(_coexistEngineArgsFile) : Path.GetFileName(_engineArgsFile);
+        Logger.Info($"Starting engine with {profileName}: \"{_exeFile}\" {arguments}");
 
         try
         {
@@ -217,12 +269,25 @@ public class TrayApplicationContext : ApplicationContext
     {
         try
         {
-            EnsureDefaultEngineArgsFile();
+            EnsureDefaultEngineArgsFiles();
             Process.Start("notepad.exe", _engineArgsFile);
         }
         catch (Exception ex)
         {
             MessageBox.Show($"Failed to open engine args: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+    }
+
+    private void OpenCoexistEngineArgs()
+    {
+        try
+        {
+            EnsureDefaultEngineArgsFiles();
+            Process.Start("notepad.exe", _coexistEngineArgsFile);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Failed to open coexistence engine args: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
 
@@ -291,6 +356,7 @@ public class TrayApplicationContext : ApplicationContext
             "api.curseforge.com",
             "files.minecraftforge.net",
             "maven.minecraftforge.net",
+            "wormhole.app",
             "gateway.ea.com",
             "r2-pc.stryder.respawn.com",
             "r2-pc-stats.stryder.respawn.com"
@@ -315,9 +381,15 @@ public class TrayApplicationContext : ApplicationContext
 
         await TestTcpConnectAsync(domain, 443);
 
-        if (addresses.Length > 0)
+        foreach (var address in addresses.Take(6))
         {
-            await LogCommandAsync("tracert", $"-d -h 12 -w 1000 {addresses[0]}", 20000);
+            await TestTcpConnectAsync(address, 443);
+        }
+
+        var traceAddress = addresses.FirstOrDefault(a => a.AddressFamily == AddressFamily.InterNetwork) ?? addresses.FirstOrDefault();
+        if (traceAddress != null)
+        {
+            await LogCommandAsync("tracert", $"-d -h 12 -w 1000 {traceAddress}", 20000);
         }
     }
 
@@ -334,6 +406,22 @@ public class TrayApplicationContext : ApplicationContext
         catch (Exception ex)
         {
             Logger.Error($"{host}:{port}: TCP connect failed: {ex.Message}");
+        }
+    }
+
+    private static async Task TestTcpConnectAsync(IPAddress address, int port)
+    {
+        try
+        {
+            var stopwatch = Stopwatch.StartNew();
+            using var client = new TcpClient(address.AddressFamily);
+            await client.ConnectAsync(address, port).WaitAsync(TimeSpan.FromSeconds(8));
+            stopwatch.Stop();
+            Logger.Info($"{address}:{port}: TCP connect OK in {stopwatch.ElapsedMilliseconds} ms.");
+        }
+        catch (Exception ex)
+        {
+            Logger.Error($"{address}:{port}: TCP connect failed: {ex.Message}");
         }
     }
 
@@ -414,16 +502,22 @@ public class TrayApplicationContext : ApplicationContext
         return true;
     }
 
-    private void EnsureDefaultEngineArgsFile()
+    private void EnsureDefaultEngineArgsFiles()
     {
-        if (File.Exists(_engineArgsFile))
+        EnsureEngineArgsFile(_engineArgsFile, GetDefaultEngineArguments());
+        EnsureEngineArgsFile(_coexistEngineArgsFile, GetDefaultCoexistEngineArguments());
+    }
+
+    private static void EnsureEngineArgsFile(string path, string defaultContents)
+    {
+        if (File.Exists(path))
         {
             return;
         }
 
         try
         {
-            File.WriteAllText(_engineArgsFile, GetDefaultEngineArguments());
+            File.WriteAllText(path, defaultContents);
         }
         catch
         {
@@ -431,15 +525,17 @@ public class TrayApplicationContext : ApplicationContext
         }
     }
 
-    private string LoadEngineArguments()
+    private string LoadEngineArguments(bool useCoexistenceProfile)
     {
         var parts = new List<string>();
+        var argsFile = useCoexistenceProfile ? _coexistEngineArgsFile : _engineArgsFile;
+        var defaultArguments = useCoexistenceProfile ? GetDefaultCoexistEngineArguments() : GetDefaultEngineArguments();
 
         try
         {
-            if (File.Exists(_engineArgsFile))
+            if (File.Exists(argsFile))
             {
-                AddArgumentLines(File.ReadLines(_engineArgsFile), parts);
+                AddArgumentLines(File.ReadLines(argsFile), parts);
             }
         }
         catch
@@ -449,7 +545,7 @@ public class TrayApplicationContext : ApplicationContext
 
         if (parts.Count == 0)
         {
-            AddArgumentLines(GetDefaultEngineArguments().Split(
+            AddArgumentLines(defaultArguments.Split(
                 new[] { "\r\n", "\n" },
                 StringSplitOptions.None), parts);
         }
@@ -481,11 +577,114 @@ public class TrayApplicationContext : ApplicationContext
             "# Lines starting with # are ignored. {LIST} and {BIN} are replaced at runtime.",
             "--wf-tcp=80,443,1024-1124,9960-9969,18000,18060,18120,27900,28910,29900",
             "--wf-udp=443,3478-3480,3659,1024-1124,18000,29900,50000-65535",
-            "--hostlist=\"{LIST}\"",
-            "--dpi-desync=split2",
-            "--dpi-desync-split-pos=2",
-            "--dpi-desync-repeats=6"
+            "--filter-tcp=80 --hostlist=\"{LIST}\" --dpi-desync=fake,fakedsplit --dpi-desync-autottl=2 --dpi-desync-fooling=md5sig --new",
+            "--filter-tcp=443 --hostlist=\"{LIST}\" --dpi-desync=fake,multidisorder --dpi-desync-split-pos=midsld --dpi-desync-repeats=6 --dpi-desync-fooling=badseq,md5sig --new",
+            "--filter-udp=443 --hostlist=\"{LIST}\" --dpi-desync=fake --dpi-desync-repeats=11 --new",
+            "--filter-tcp=1024-1124,9960-9969,18000,18060,18120,27900,28910,29900 --hostlist=\"{LIST}\" --dpi-desync=split2 --dpi-desync-split-pos=2 --dpi-desync-repeats=6 --new",
+            "--filter-udp=3478-3480,3659,1024-1124,18000,29900,50000-65535 --hostlist=\"{LIST}\" --dpi-desync=split2 --dpi-desync-split-pos=2 --dpi-desync-repeats=6"
         });
+    }
+
+    private static string GetDefaultCoexistEngineArguments()
+    {
+        return string.Join(Environment.NewLine, new[]
+        {
+            "# Used automatically when another zapret/winws instance is already running.",
+            "# Keep this profile away from HTTP/TLS/QUIC 80/443 so it can coexist with upstream zapret presets.",
+            "# Lines starting with # are ignored. {LIST} and {BIN} are replaced at runtime.",
+            "--wf-tcp=1024-1124,9960-9969,18000,18060,18120,27900,28910,29900",
+            "--wf-udp=3478-3480,3659,1024-1124,18000,29900,50000-65535",
+            "--filter-tcp=1024-1124,9960-9969,18000,18060,18120,27900,28910,29900 --hostlist=\"{LIST}\" --dpi-desync=split2 --dpi-desync-split-pos=2 --dpi-desync-repeats=6 --new",
+            "--filter-udp=3478-3480,3659,1024-1124,18000,29900,50000-65535 --hostlist=\"{LIST}\" --dpi-desync=split2 --dpi-desync-split-pos=2 --dpi-desync-repeats=6"
+        });
+    }
+
+    private bool TryFindRunningOwnEngine(out int pid)
+    {
+        foreach (var process in Process.GetProcessesByName("winws"))
+        {
+            using (process)
+            {
+                if (process.HasExited || _engineProcess?.Id == process.Id)
+                {
+                    continue;
+                }
+
+                if (IsSamePath(TryGetProcessPath(process), _exeFile))
+                {
+                    pid = process.Id;
+                    return true;
+                }
+            }
+        }
+
+        pid = 0;
+        return false;
+    }
+
+    private bool HasExternalZapretEngine(out string summary)
+    {
+        var external = new List<string>();
+        AddExternalZapretProcesses("winws", external);
+        AddExternalZapretProcesses("winws2", external);
+
+        summary = external.Count == 0 ? "" : string.Join(", ", external.Take(4));
+        return external.Count > 0;
+    }
+
+    private void AddExternalZapretProcesses(string processName, List<string> external)
+    {
+        foreach (var process in Process.GetProcessesByName(processName))
+        {
+            using (process)
+            {
+                if (process.HasExited || _engineProcess?.Id == process.Id)
+                {
+                    continue;
+                }
+
+                var processPath = TryGetProcessPath(process);
+                if (IsSamePath(processPath, _exeFile))
+                {
+                    continue;
+                }
+
+                var displayPath = string.IsNullOrWhiteSpace(processPath) ? process.ProcessName : processPath;
+                external.Add($"{process.ProcessName}:{process.Id} {displayPath}");
+            }
+        }
+    }
+
+    private static string? TryGetProcessPath(Process process)
+    {
+        try
+        {
+            return process.MainModule?.FileName;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static bool IsSamePath(string? left, string right)
+    {
+        if (string.IsNullOrWhiteSpace(left))
+        {
+            return false;
+        }
+
+        try
+        {
+            return string.Equals(
+                Path.GetFullPath(left),
+                Path.GetFullPath(right),
+                StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return string.Equals(left, right, StringComparison.OrdinalIgnoreCase);
+        }
     }
 
     private string FindRootDir(string baseDir)

@@ -3,7 +3,7 @@
 
 [Setup]
 AppName=Steam Unlock
-AppVersion=1.2
+AppVersion=1.4
 DefaultDirName={autopf}\SteamUnlock
 DefaultGroupName=Steam Unlock
 UninstallDisplayIcon={app}\SteamUnlock.exe
@@ -21,6 +21,7 @@ Source: ".\publish\bin\WinDivert64.sys"; DestDir: "{app}\bin"; Flags: ignorevers
 Source: ".\publish\bin\cygwin1.dll"; DestDir: "{app}\bin"; Flags: ignoreversion
 Source: ".\publish\list.txt"; DestDir: "{app}"; Flags: ignoreversion
 Source: ".\publish\engine_args.txt"; DestDir: "{app}"; Flags: ignoreversion
+Source: ".\publish\engine_args_coexist.txt"; DestDir: "{app}"; Flags: ignoreversion
 
 [Tasks]
 Name: "startwithwindows"; Description: "Run Steam Unlock at Windows startup"; GroupDescription: "Startup options:"; Flags: checkedonce
@@ -38,7 +39,6 @@ Filename: "{app}\SteamUnlock.exe"; Description: "Launch Steam Unlock"; Flags: sh
 [UninstallRun]
 ; Kill all related processes FIRST before any cleanup
 Filename: "taskkill"; Parameters: "/F /IM SteamUnlock.exe /T"; Flags: runhidden; RunOnceId: "KillApp"
-Filename: "taskkill"; Parameters: "/F /IM winws.exe /T"; Flags: runhidden; RunOnceId: "KillEngine"
 ; Remove Task Scheduler autostart
 Filename: "schtasks"; Parameters: "/Delete /TN ""SteamUnlockAutostart"" /F"; Flags: runhidden; RunOnceId: "DeleteTask"
 ; Clean up legacy Registry entries (HKCU)
@@ -63,6 +63,7 @@ Type: files; Name: "{app}\bin\winws.exe"
 Type: files; Name: "{app}\bin\cygwin1.dll"
 Type: files; Name: "{app}\list.txt"
 Type: files; Name: "{app}\engine_args.txt"
+Type: files; Name: "{app}\engine_args_coexist.txt"
 Type: files; Name: "{app}\SteamUnlock.exe"
 Type: filesandordirs; Name: "{app}\logs"
 ; Remove empty directories
@@ -77,7 +78,6 @@ var
 begin
   // Kill any running processes FIRST
   Exec('taskkill', '/F /IM SteamUnlock.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-  Exec('taskkill', '/F /IM winws.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   
   // Stop and remove WinDivert service if it exists
   Exec('sc', 'stop WinDivert', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
