@@ -32,6 +32,9 @@ if ($LASTEXITCODE -eq 0) {
     if (Test-Path "./engine_args.txt") {
         Copy-Item -Path "./engine_args.txt" -Destination "$publishDir/engine_args.txt" -Force
     }
+    if (Test-Path "./engine_args_aggressive.txt") {
+        Copy-Item -Path "./engine_args_aggressive.txt" -Destination "$publishDir/engine_args_aggressive.txt" -Force
+    }
     if (Test-Path "./engine_args_coexist.txt") {
         Copy-Item -Path "./engine_args_coexist.txt" -Destination "$publishDir/engine_args_coexist.txt" -Force
     }

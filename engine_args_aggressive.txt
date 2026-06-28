@@ -1,0 +1,15 @@
+# More aggressive profile based on zapret preset1-style techniques.
+# Lines starting with # are ignored. {LIST} and {BIN} are replaced at runtime.
+--wf-tcp=80,443,1024-1124,9960-9969,18000,18060,18120,27900,28910,29900
+--wf-udp=443,3478-3480,3659,1024-1124,18000,29900,50000-65535
+--wf-raw-part=@"{BIN}\windivert.filter\windivert_part.discord_media.txt"
+--wf-raw-part=@"{BIN}\windivert.filter\windivert_part.stun.txt"
+--wf-raw-part=@"{BIN}\windivert.filter\windivert_part.wireguard.txt"
+--wf-raw-part=@"{BIN}\windivert.filter\windivert_part.quic_initial_ietf.txt"
+--filter-tcp=80 --hostlist="{LIST}" --dpi-desync=fake,fakedsplit --dpi-desync-autottl=2 --dpi-desync-fooling=md5sig --new
+--filter-tcp=443 --hostlist="{LIST}" --dpi-desync=fake,multidisorder --dpi-desync-split-pos=1,midsld --dpi-desync-repeats=11 --dpi-desync-fooling=md5sig --dpi-desync-fake-tls-mod=rnd,dupsid,sni=www.google.com --new
+--filter-tcp=443 --dpi-desync=fake,multidisorder --dpi-desync-split-pos=midsld --dpi-desync-repeats=6 --dpi-desync-fooling=badseq,md5sig --new
+--filter-l7=quic --hostlist="{LIST}" --dpi-desync=fake --dpi-desync-repeats=11 --dpi-desync-fake-quic="{BIN}\files\quic_initial_www_google_com.bin" --new
+--filter-l7=quic --dpi-desync=fake --dpi-desync-repeats=11 --new
+--filter-tcp=1024-1124,9960-9969,18000,18060,18120,27900,28910,29900 --hostlist="{LIST}" --dpi-desync=split2 --dpi-desync-split-pos=2 --dpi-desync-repeats=6 --new
+--filter-udp=3478-3480,3659,1024-1124,18000,29900,50000-65535 --hostlist="{LIST}" --dpi-desync=split2 --dpi-desync-split-pos=2 --dpi-desync-repeats=6

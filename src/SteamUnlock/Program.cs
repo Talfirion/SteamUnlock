@@ -1,8 +1,10 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Net;
+using System.Net.Http;
 using System.Net.Sockets;
 using System.Runtime.InteropServices;
 using System.Security.Principal;
@@ -26,7 +28,7 @@ static class Program
         _singleInstanceMutex = CreateSingleInstanceMutex(out var isFirstInstance);
         if (!isFirstInstance)
         {
-            MessageBox.Show("Steam Unlock is already running.", "Steam Unlock", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            MessageBox.Show(UiText.AppAlreadyRunning, UiText.AppName, MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
 
@@ -36,7 +38,7 @@ static class Program
 
         if (!IsAdministrator())
         {
-            MessageBox.Show("This application MUST be run as ADMINISTRATOR!", "Steam Unlock Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            MessageBox.Show(UiText.AdminRequired, UiText.ErrorTitle, MessageBoxButtons.OK, MessageBoxIcon.Error);
             return;
         }
 
@@ -87,9 +89,16 @@ public class TrayApplicationContext : ApplicationContext
     private readonly string _binDir;
     private readonly string _listFile;
     private readonly string _engineArgsFile;
+    private readonly string _aggressiveEngineArgsFile;
     private readonly string _coexistEngineArgsFile;
     private readonly string _exeFile;
     private bool _diagnosticsRunning;
+    private bool _forceAggressiveProfileOnce;
+    private string _currentProfileName = "";
+    private static readonly HttpClient ProbeHttpClient = new()
+    {
+        Timeout = TimeSpan.FromSeconds(8)
+    };
 
     public TrayApplicationContext()
     {
@@ -98,6 +107,7 @@ public class TrayApplicationContext : ApplicationContext
         _binDir = Path.Combine(_rootDir, "bin");
         _listFile = Path.Combine(_rootDir, "list.txt");
         _engineArgsFile = Path.Combine(_rootDir, "engine_args.txt");
+        _aggressiveEngineArgsFile = Path.Combine(_rootDir, "engine_args_aggressive.txt");
         _coexistEngineArgsFile = Path.Combine(_rootDir, "engine_args_coexist.txt");
         _exeFile = Path.Combine(_binDir, "winws.exe");
         Logger.Initialize(_rootDir);
@@ -105,7 +115,7 @@ public class TrayApplicationContext : ApplicationContext
         EnsureDefaultEngineArgsFiles();
 
         // Initialize Autostart Menu Item early to use in CreateContextMenu
-        _autostartMenuItem = new ToolStripMenuItem("Run at Windows Startup", null, (s, e) => ToggleAutostart());
+        _autostartMenuItem = new ToolStripMenuItem(UiText.RunAtStartup, null, (s, e) => ToggleAutostart());
         _autostartMenuItem.Checked = AutostartManager.IsEnabled();
 
         // Initialize Tray Icon
@@ -114,7 +124,7 @@ public class TrayApplicationContext : ApplicationContext
             Icon = SystemIcons.Shield, // Premium-ish shield icon for safety
             ContextMenuStrip = CreateContextMenu(),
             Visible = true,
-            Text = "Steam Unlock Service"
+            Text = UiText.ServiceName
         };
 
         _trayIcon.DoubleClick += (s, e) => StartEngine();
@@ -127,15 +137,16 @@ public class TrayApplicationContext : ApplicationContext
     {
         var menu = new ContextMenuStrip();
 
-        var startItem = new ToolStripMenuItem("Start Service", null, (s, e) => StartEngine());
-        var stopItem = new ToolStripMenuItem("Stop Service", null, (s, e) => StopEngine());
-        var settingsItem = new ToolStripMenuItem("Edit list.txt", null, (s, e) => OpenSettings());
-        var engineArgsItem = new ToolStripMenuItem("Edit engine_args.txt", null, (s, e) => OpenEngineArgs());
-        var coexistEngineArgsItem = new ToolStripMenuItem("Edit engine_args_coexist.txt", null, (s, e) => OpenCoexistEngineArgs());
-        var diagnosticsItem = new ToolStripMenuItem("Run Diagnostics", null, async (s, e) => await RunDiagnosticsAsync());
-        var logsItem = new ToolStripMenuItem("Open Logs Folder", null, (s, e) => OpenLogsFolder());
-        var updateItem = new ToolStripMenuItem("Check for Updates", null, async (s, e) => await CheckForUpdates());
-        var exitItem = new ToolStripMenuItem("Exit", null, (s, e) => Exit());
+        var startItem = new ToolStripMenuItem(UiText.StartService, null, (s, e) => StartEngine());
+        var stopItem = new ToolStripMenuItem(UiText.StopService, null, (s, e) => StopEngine());
+        var settingsItem = new ToolStripMenuItem(UiText.EditList, null, (s, e) => OpenSettings());
+        var engineArgsItem = new ToolStripMenuItem(UiText.EditEngineArgs, null, (s, e) => OpenEngineArgs());
+        var aggressiveEngineArgsItem = new ToolStripMenuItem("Edit engine_args_aggressive.txt", null, (s, e) => OpenAggressiveEngineArgs());
+        var coexistEngineArgsItem = new ToolStripMenuItem(UiText.EditCoexistEngineArgs, null, (s, e) => OpenCoexistEngineArgs());
+        var diagnosticsItem = new ToolStripMenuItem(UiText.RunDiagnostics, null, async (s, e) => await RunDiagnosticsAsync());
+        var logsItem = new ToolStripMenuItem(UiText.OpenLogsFolder, null, (s, e) => OpenLogsFolder());
+        var updateItem = new ToolStripMenuItem(UiText.CheckForUpdates, null, async (s, e) => await CheckForUpdates());
+        var exitItem = new ToolStripMenuItem(UiText.Exit, null, (s, e) => Exit());
 
         menu.Items.Add(startItem);
         menu.Items.Add(stopItem);
@@ -143,6 +154,7 @@ public class TrayApplicationContext : ApplicationContext
         menu.Items.Add(_autostartMenuItem);
         menu.Items.Add(settingsItem);
         menu.Items.Add(engineArgsItem);
+        menu.Items.Add(aggressiveEngineArgsItem);
         menu.Items.Add(coexistEngineArgsItem);
         menu.Items.Add(diagnosticsItem);
         menu.Items.Add(logsItem);
@@ -191,8 +203,15 @@ public class TrayApplicationContext : ApplicationContext
             Logger.Info($"DNS flush exit code: {flushProcess?.ExitCode.ToString() ?? "unknown"}.");
         }
 
-        string arguments = LoadEngineArguments(useCoexistenceProfile);
-        var profileName = useCoexistenceProfile ? Path.GetFileName(_coexistEngineArgsFile) : Path.GetFileName(_engineArgsFile);
+        var useAggressiveProfile = !useCoexistenceProfile && _forceAggressiveProfileOnce;
+        _forceAggressiveProfileOnce = false;
+        string arguments = LoadEngineArguments(useCoexistenceProfile, useAggressiveProfile);
+        var profileName = useCoexistenceProfile
+            ? Path.GetFileName(_coexistEngineArgsFile)
+            : useAggressiveProfile
+                ? Path.GetFileName(_aggressiveEngineArgsFile)
+                : Path.GetFileName(_engineArgsFile);
+        _currentProfileName = profileName;
         Logger.Info($"Starting engine with {profileName}: \"{_exeFile}\" {arguments}");
 
         try
@@ -232,6 +251,10 @@ public class TrayApplicationContext : ApplicationContext
             _trayIcon.Text = "Steam Unlock - Running";
             _trayIcon.ShowBalloonTip(2000, "Steam Unlock", "Service started successfully.", ToolTipIcon.Info);
             Logger.Info($"Engine started. PID: {_engineProcess.Id}.");
+            if (!useCoexistenceProfile && !useAggressiveProfile)
+            {
+                _ = ValidateAndFallbackAsync();
+            }
         }
         catch (Exception ex)
         {
@@ -275,6 +298,19 @@ public class TrayApplicationContext : ApplicationContext
         catch (Exception ex)
         {
             MessageBox.Show($"Failed to open engine args: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+    }
+
+    private void OpenAggressiveEngineArgs()
+    {
+        try
+        {
+            EnsureDefaultEngineArgsFiles();
+            Process.Start("notepad.exe", _aggressiveEngineArgsFile);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Failed to open aggressive engine args: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
 
@@ -345,6 +381,79 @@ public class TrayApplicationContext : ApplicationContext
         finally
         {
             _diagnosticsRunning = false;
+        }
+    }
+
+    private async Task ValidateAndFallbackAsync()
+    {
+        await Task.Delay(TimeSpan.FromSeconds(5));
+
+        if (_engineProcess == null || _engineProcess.HasExited)
+        {
+            return;
+        }
+
+        Logger.Info($"Running health probes for profile {_currentProfileName}.");
+        var healthy = await ProbeConnectivityAsync();
+        if (healthy)
+        {
+            Logger.Info($"Health probes passed for profile {_currentProfileName}.");
+            return;
+        }
+
+        if (_engineProcess == null || _engineProcess.HasExited)
+        {
+            return;
+        }
+
+        Logger.Warn($"Health probes failed for profile {_currentProfileName}. Switching to aggressive profile.");
+        _trayIcon.ShowBalloonTip(
+            4000,
+            "Steam Unlock",
+            "Standard profile did not pass HTTPS checks. Switching to aggressive profile.",
+            ToolTipIcon.Warning);
+
+        _forceAggressiveProfileOnce = true;
+        StopEngine();
+        StartEngine();
+    }
+
+    private static async Task<bool> ProbeConnectivityAsync()
+    {
+        var successes = 0;
+        var targets = new[]
+        {
+            "https://steamcommunity.com/",
+            "https://wormhole.app/",
+            "https://api.curseforge.com/",
+            "https://files.minecraftforge.net/"
+        };
+
+        foreach (var target in targets)
+        {
+            if (await ProbeHttpsAsync(target))
+            {
+                successes++;
+            }
+        }
+
+        Logger.Info($"Health probe result: {successes}/{targets.Length} endpoints reachable.");
+        return successes >= 2;
+    }
+
+    private static async Task<bool> ProbeHttpsAsync(string url)
+    {
+        try
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, url);
+            using var response = await ProbeHttpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
+            Logger.Info($"{url}: HTTPS probe received {(int)response.StatusCode} {response.ReasonPhrase}.");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Logger.Warn($"{url}: HTTPS probe failed: {ex.Message}");
+            return false;
         }
     }
 
@@ -505,6 +614,7 @@ public class TrayApplicationContext : ApplicationContext
     private void EnsureDefaultEngineArgsFiles()
     {
         EnsureEngineArgsFile(_engineArgsFile, GetDefaultEngineArguments());
+        EnsureEngineArgsFile(_aggressiveEngineArgsFile, GetDefaultAggressiveEngineArguments());
         EnsureEngineArgsFile(_coexistEngineArgsFile, GetDefaultCoexistEngineArguments());
     }
 
@@ -525,11 +635,19 @@ public class TrayApplicationContext : ApplicationContext
         }
     }
 
-    private string LoadEngineArguments(bool useCoexistenceProfile)
+    private string LoadEngineArguments(bool useCoexistenceProfile, bool useAggressiveProfile)
     {
         var parts = new List<string>();
-        var argsFile = useCoexistenceProfile ? _coexistEngineArgsFile : _engineArgsFile;
-        var defaultArguments = useCoexistenceProfile ? GetDefaultCoexistEngineArguments() : GetDefaultEngineArguments();
+        var argsFile = useCoexistenceProfile
+            ? _coexistEngineArgsFile
+            : useAggressiveProfile
+                ? _aggressiveEngineArgsFile
+                : _engineArgsFile;
+        var defaultArguments = useCoexistenceProfile
+            ? GetDefaultCoexistEngineArguments()
+            : useAggressiveProfile
+                ? GetDefaultAggressiveEngineArguments()
+                : GetDefaultEngineArguments();
 
         try
         {
@@ -594,6 +712,28 @@ public class TrayApplicationContext : ApplicationContext
             "# Lines starting with # are ignored. {LIST} and {BIN} are replaced at runtime.",
             "--wf-tcp=1024-1124,9960-9969,18000,18060,18120,27900,28910,29900",
             "--wf-udp=3478-3480,3659,1024-1124,18000,29900,50000-65535",
+            "--filter-tcp=1024-1124,9960-9969,18000,18060,18120,27900,28910,29900 --hostlist=\"{LIST}\" --dpi-desync=split2 --dpi-desync-split-pos=2 --dpi-desync-repeats=6 --new",
+            "--filter-udp=3478-3480,3659,1024-1124,18000,29900,50000-65535 --hostlist=\"{LIST}\" --dpi-desync=split2 --dpi-desync-split-pos=2 --dpi-desync-repeats=6"
+        });
+    }
+
+    private static string GetDefaultAggressiveEngineArguments()
+    {
+        return string.Join(Environment.NewLine, new[]
+        {
+            "# More aggressive profile based on zapret preset1-style techniques.",
+            "# Lines starting with # are ignored. {LIST} and {BIN} are replaced at runtime.",
+            "--wf-tcp=80,443,1024-1124,9960-9969,18000,18060,18120,27900,28910,29900",
+            "--wf-udp=443,3478-3480,3659,1024-1124,18000,29900,50000-65535",
+            "--wf-raw-part=@\"{BIN}\\windivert.filter\\windivert_part.discord_media.txt\"",
+            "--wf-raw-part=@\"{BIN}\\windivert.filter\\windivert_part.stun.txt\"",
+            "--wf-raw-part=@\"{BIN}\\windivert.filter\\windivert_part.wireguard.txt\"",
+            "--wf-raw-part=@\"{BIN}\\windivert.filter\\windivert_part.quic_initial_ietf.txt\"",
+            "--filter-tcp=80 --hostlist=\"{LIST}\" --dpi-desync=fake,fakedsplit --dpi-desync-autottl=2 --dpi-desync-fooling=md5sig --new",
+            "--filter-tcp=443 --hostlist=\"{LIST}\" --dpi-desync=fake,multidisorder --dpi-desync-split-pos=1,midsld --dpi-desync-repeats=11 --dpi-desync-fooling=md5sig --dpi-desync-fake-tls-mod=rnd,dupsid,sni=www.google.com --new",
+            "--filter-tcp=443 --dpi-desync=fake,multidisorder --dpi-desync-split-pos=midsld --dpi-desync-repeats=6 --dpi-desync-fooling=badseq,md5sig --new",
+            "--filter-l7=quic --hostlist=\"{LIST}\" --dpi-desync=fake --dpi-desync-repeats=11 --dpi-desync-fake-quic=\"{BIN}\\files\\quic_initial_www_google_com.bin\" --new",
+            "--filter-l7=quic --dpi-desync=fake --dpi-desync-repeats=11 --new",
             "--filter-tcp=1024-1124,9960-9969,18000,18060,18120,27900,28910,29900 --hostlist=\"{LIST}\" --dpi-desync=split2 --dpi-desync-split-pos=2 --dpi-desync-repeats=6 --new",
             "--filter-udp=3478-3480,3659,1024-1124,18000,29900,50000-65535 --hostlist=\"{LIST}\" --dpi-desync=split2 --dpi-desync-split-pos=2 --dpi-desync-repeats=6"
         });
@@ -717,6 +857,27 @@ public class TrayApplicationContext : ApplicationContext
         }
         base.Dispose(disposing);
     }
+}
+
+public static class UiText
+{
+    private static bool Russian => CultureInfo.CurrentUICulture.TwoLetterISOLanguageName is "ru" or "uk";
+
+    public static string AppName => "Steam Unlock";
+    public static string ServiceName => "Steam Unlock Service";
+    public static string ErrorTitle => Russian ? "Ошибка Steam Unlock" : "Steam Unlock Error";
+    public static string AppAlreadyRunning => Russian ? "Steam Unlock уже запущен." : "Steam Unlock is already running.";
+    public static string AdminRequired => Russian ? "Приложение нужно запускать от имени администратора." : "This application MUST be run as ADMINISTRATOR!";
+    public static string RunAtStartup => Russian ? "Запускать вместе с Windows" : "Run at Windows Startup";
+    public static string StartService => Russian ? "Запустить сервис" : "Start Service";
+    public static string StopService => Russian ? "Остановить сервис" : "Stop Service";
+    public static string EditList => Russian ? "Редактировать list.txt" : "Edit list.txt";
+    public static string EditEngineArgs => Russian ? "Редактировать engine_args.txt" : "Edit engine_args.txt";
+    public static string EditCoexistEngineArgs => Russian ? "Редактировать engine_args_coexist.txt" : "Edit engine_args_coexist.txt";
+    public static string RunDiagnostics => Russian ? "Запустить диагностику" : "Run Diagnostics";
+    public static string OpenLogsFolder => Russian ? "Открыть папку логов" : "Open Logs Folder";
+    public static string CheckForUpdates => Russian ? "Проверить обновления" : "Check for Updates";
+    public static string Exit => Russian ? "Выход" : "Exit";
 }
 
 public static class Logger

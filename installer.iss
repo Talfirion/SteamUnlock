@@ -3,7 +3,7 @@
 
 [Setup]
 AppName=Steam Unlock
-AppVersion=1.4
+AppVersion=1.6
 DefaultDirName={autopf}\SteamUnlock
 DefaultGroupName=Steam Unlock
 UninstallDisplayIcon={app}\SteamUnlock.exe
@@ -19,8 +19,11 @@ Source: ".\publish\bin\winws.exe"; DestDir: "{app}\bin"; Flags: ignoreversion
 Source: ".\publish\bin\WinDivert.dll"; DestDir: "{app}\bin"; Flags: ignoreversion
 Source: ".\publish\bin\WinDivert64.sys"; DestDir: "{app}\bin"; Flags: ignoreversion uninsrestartdelete
 Source: ".\publish\bin\cygwin1.dll"; DestDir: "{app}\bin"; Flags: ignoreversion
+Source: ".\publish\bin\files\*"; DestDir: "{app}\bin\files"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: ".\publish\bin\windivert.filter\*"; DestDir: "{app}\bin\windivert.filter"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: ".\publish\list.txt"; DestDir: "{app}"; Flags: ignoreversion
 Source: ".\publish\engine_args.txt"; DestDir: "{app}"; Flags: ignoreversion
+Source: ".\publish\engine_args_aggressive.txt"; DestDir: "{app}"; Flags: ignoreversion
 Source: ".\publish\engine_args_coexist.txt"; DestDir: "{app}"; Flags: ignoreversion
 
 [Tasks]
@@ -35,6 +38,7 @@ Name: "{commondesktop}\Steam Unlock"; Filename: "{app}\SteamUnlock.exe"
 [Run]
 Filename: "schtasks"; Parameters: "/Create /TN ""SteamUnlockAutostart"" /TR ""\""{app}\SteamUnlock.exe\"""" /SC ONLOGON /RL HIGHEST /F"; Flags: runhidden; Tasks: startwithwindows
 Filename: "{app}\SteamUnlock.exe"; Description: "Launch Steam Unlock"; Flags: shellexec postinstall skipifsilent
+Filename: "{app}\SteamUnlock.exe"; Flags: shellexec nowait skipifnotsilent
 
 [UninstallRun]
 ; Kill all related processes FIRST before any cleanup
@@ -63,9 +67,12 @@ Type: files; Name: "{app}\bin\winws.exe"
 Type: files; Name: "{app}\bin\cygwin1.dll"
 Type: files; Name: "{app}\list.txt"
 Type: files; Name: "{app}\engine_args.txt"
+Type: files; Name: "{app}\engine_args_aggressive.txt"
 Type: files; Name: "{app}\engine_args_coexist.txt"
 Type: files; Name: "{app}\SteamUnlock.exe"
 Type: filesandordirs; Name: "{app}\logs"
+Type: filesandordirs; Name: "{app}\bin\files"
+Type: filesandordirs; Name: "{app}\bin\windivert.filter"
 ; Remove empty directories
 Type: dirifempty; Name: "{app}\bin"
 Type: dirifempty; Name: "{app}"
@@ -78,11 +85,6 @@ var
 begin
   // Kill any running processes FIRST
   Exec('taskkill', '/F /IM SteamUnlock.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-  
-  // Stop and remove WinDivert service if it exists
-  Exec('sc', 'stop WinDivert', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-  Sleep(1000); // Wait 1 second for service to stop
-  Exec('sc', 'delete WinDivert', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   
   // Clean up legacy Registry entries from old versions
   Exec('reg', 'delete "HKCU\Software\Microsoft\Windows\CurrentVersion\Run" /v "SteamUnlock" /f', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
